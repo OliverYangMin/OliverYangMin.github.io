@@ -1,0 +1,325 @@
+local module_sim 	= AddModule("startSimulation","Start Simulation")
+
+local prm_sim 		= AddParameter(module_sim, nil, "node", "Simulation Parameters")
+SHOWGRAPHIC			= AddParameter(module_sim, prm_sim, "check", "Show Simulation Graphics", true)
+UPDATEINTV			= AddParameter(module_sim, prm_sim, "value", "the simulationtime/RealTime", 64)	
+FOOT                = AddParameter(module_sim, prm_sim, "value", "FOOT Measure", 0.3048)	
+DURATION			= AddParameter(module_sim, prm_sim, "choice", "Simulation Duration", "1 days|2 days|3 days|Forever|", 1)
+movetime			= AddParameter(module_sim, prm_sim, "value", "yc move Interval ", 1)
+
+local yard_sim      = AddParameter(module_sim, nil, "node", "Yard Parameters")
+X 					= AddParameter(module_sim, yard_sim, "value", "The count of row", 7)
+Z					= AddParameter(module_sim, yard_sim, "value", "The count of bay", 10)
+Y					= AddParameter(module_sim, yard_sim, "value", "The count of tier", 4)
+
+local yc_sim        = AddParameter(module_sim, nil, "node", "YC Parameters")
+xv					= AddParameter(module_sim, yc_sim, "value", "The speed of trolley", 1)
+yv					= AddParameter(module_sim, yc_sim, "value", "The speed of gantry" , 1)
+zv					= AddParameter(module_sim, yc_sim, "value", "The speed of hoist"  , 1)
+CatchTime           = AddParameter(module_sim, yc_sim, "value", "The time cost of catching"  , 20)
+--X:(0,X-1) Y:(0,Y-1) Z:(0,Z-1)
+
+function Add3DBlock(world, bays, rows)
+	local control = AddSphere(world, 1)
+    local wid = bays*20
+    local len = rows*8
+	local top = Add3DLine(world, len, 0,0,0)
+	SetPosition(top, 0, 0, 0)
+	SetParent(top, control)
+
+	local bottom = Add3DLine(world, len, 0,0,0)
+	SetPosition(bottom, 0, 0, wid)
+	SetParent(bottom, control)
+
+	local left = Add3DLine(world, wid, 0,0,0)
+	SetRotation(left, 0, -90, 0)
+	SetPosition(left, 0, 0, 0)
+	SetParent(left, control)
+
+	local right = Add3DLine(world, wid, 0,0,0)
+	SetRotation(right, 0, -90, 0)
+	SetPosition(right, len, 0, 0)
+	SetParent(right, control)
+	
+	local z = 0 + 20 
+	while z < wid do 
+		local line = Add3DLine(world, len, 0,0,0)
+		SetPosition(line, 0, 0, z)
+		SetParent(line,control)
+		z= z + 20
+	end 
+	local x = 0 + 8
+	while x < len do
+		local line = Add3DLine(world, wid, 0,0,0)
+		SetRotation(line, 0, -90, 0)
+		SetPosition(line, x, 0, 0)
+		SetParent(line, control)
+		x = x + 8
+	end
+    local po1= len/2+4
+	local po2 = len/2-4
+	local pos = 0
+	while pos<8/4 do 
+		local rect1 = Add3DRect(world,8,20,180,180,180)
+		SetPosition(rect1,po1+4, 0, -10)
+		SetParent(rect1,control)
+		local rect2 = Add3DRect(world,8,20,180,180,180)
+		SetPosition(rect2,po1+4, 0, wid+10)
+		SetParent(rect2,control)
+		local rect3 = Add3DRect(world,8,20,180,180,180)
+		SetPosition(rect3,po2-4, 0, -10)
+		SetParent(rect3,control)
+		local rect4 = Add3DRect(world,8,20,180,180,180)
+		SetPosition(rect4,po2-4, 0, wid+10)
+		SetParent(rect4,control)
+		po1 = po1 + 12
+		po2 = po2 - 12
+		pos = pos + 1
+	end 
+	return control 
+end
+
+function startSimulation() 
+    M3D = Create3DWorld("test", true, 1, 30)
+    AddZipTo3DPath(M3D, "model.zip")
+    AddLight(M3D, -1000,1000,-1000, 3000)   
+    SetCamera(M3D, 8*X/2, 50, -100,8*X/2,0,0)
+    local block = Add3DBlock(M3D, Z,X)
+    
+--    ctns = {}           --add containers
+    
+--    ctns[1] = NewContainer{x=1,y=0,z=0}
+--        ctns[1].pos()
+--        ctns[2] = NewContainer{x=5,y=0,z=0}
+--        ctns[2].pos()
+--    for i=1,#request do 
+--        ctns[i] = NewContainer{x=request[i].x,y=request[i].y,z=request[i].z}
+--        ctns[i].pos()
+--    end 
+    
+    rmg = NewRMG{0,3,3}      --add RMG
+    --rmg.pos()
+    --init_tasks()
+    --rmg.tasks[1] = {d={2,0,3},ctn=ctns[1]}
+   -- rmg.tasks[2] = {d={4,0,7},ctn=ctns[2]}
+    init()
+  
+    --local c = NewContainer{x=3,y=0,z=4}
+   
+    
+    --rmg.addtask({4,0,7}, ctns[2])
+    
+    if SHOWGRAPHIC then
+        CreateEvent(GetSimTime(), update3d)
+    end
+    --CreateEvent(GetSimTime(), rmg.exec)
+   
+    ExecAllEvents()
+end 
+
+function NewRMG(origin)
+    local rmg = {}
+
+    rmg.frame = LoadObject(M3D, "rmg.3ds", true)
+    rmg.trolley = LoadObject(M3D, "trolley.3ds", true)
+    rmg.spreader  = LoadObject(M3D, "spreader.3ds", true)
+    rmg.wirerope  = LoadObject(M3D, "wirerope.3ds", true)
+    
+    SetScale(rmg.frame, 1/FOOT,1/FOOT,1/FOOT)
+    SetParent(rmg.wirerope, rmg.spreader)
+    SetParent(rmg.spreader, rmg.trolley)
+    SetParent(rmg.trolley, rmg.frame)
+    SetPosition(rmg.wirerope, 0, 1.1, 0)
+    
+    rmg.o = origin
+    rmg.x = rmg.o[1] * 8 
+    rmg.y = rmg.o[2] * 8
+    rmg.z = rmg.o[3] * 20
+    rmg.tasks = {}
+    rmg.state = 'idle' 
+    
+    function rmg.pos()  
+        SetPosition(rmg.frame, X*8/2, 0, rmg.z+10)
+        
+        SetPosition(rmg.trolley, (rmg.x-(X-1)*4)*FOOT, 0, 0)
+        
+        SetPosition(rmg.spreader, 0, rmg.y*FOOT+2.75, 0)
+        
+        SetScale(rmg.wirerope, 1, (17.58- rmg.y*FOOT -3), 1)
+    end 
+    
+    function rmg.addtask(did, target)
+        table.insert(rmg.tasks, {d=did, ctn=target})
+        if rmg.state == "idle" then
+            rmg.co = CreateEvent(GetSimTime(), rmg.exec)   
+        end
+    end
+    
+    local curtask = 1
+    function rmg.exec()
+        while rmg.tasks[curtask] do
+            local task = rmg.tasks[curtask]
+            rmg.state = "unload"
+            rmg.run({task.ctn.x,task.ctn.y,task.ctn.z}, task.ctn, task.rtype)
+            Delay()
+            rmg.run(task.d, task.ctn, task.rtype)
+            Delay()
+            --SetPosition(task.ctn.m, nodes[task.d].x, 1000, nodes[task.d].z)
+            curtask = curtask + 1
+            print(curtask)
+        end
+        rmg.state = "idle"
+    end
+    
+    function rmg.catchOrloose(ctn, d, rtype)
+        if rmg.state == 'load' then 
+            Delay(CatchTime)
+            ctn.x,ctn.y,ctn.z = d[1], d[2], d[3]
+            SetParent(ctn.m, nil)
+            SetPosition(ctn.m, ctn.x*8+4, ctn.y*8, ctn.z*20+10)
+            SetScale(ctn.m, 1/FOOT,1/FOOT,1/FOOT)
+            if rtype==2 then 
+                ctn.out()
+            end 
+            rmg.state = 'unload'
+        elseif rmg.state == 'unload' then
+            Delay(CatchTime)
+            SetParent(ctn.m, rmg.spreader)
+            SetPosition(ctn.m, 0,-2.75,0)    
+            SetScale(ctn.m, 1,1,1)
+            rmg.state = 'load'
+        end 
+    end
+    
+    function rmg.spreaderMove(y)   --z is precise number of z 
+        while rmg.y~=y do 
+            if rmg.y>y then 
+                rmg.y = rmg.y - yv  <= y and y or rmg.y - yv 
+            elseif rmg.y<y then 
+                rmg.y = rmg.y + yv  >= y and y or rmg.y + yv
+            end      
+            Delay(movetime)
+        end 
+    end     
+    
+    function rmg.XZMove(x, z)      --x,y is precise number of z 
+        while not (rmg.x == x and rmg.z == z)  do 
+            if rmg.z>z then 
+                rmg.z = rmg.z - zv <= z and z or rmg.z-zv 
+            elseif rmg.z<z then
+                rmg.z = rmg.z + zv >= z and z or rmg.z+zv 
+            end 
+            if rmg.x>x then 
+                rmg.x = rmg.x - xv <= x and x or rmg.x-xv 
+            elseif rmg.x<x then 
+                rmg.x = rmg.x + xv >= x and x or rmg.x+xv 
+            end 
+            Delay(movetime)
+        end 
+    end 
+    
+    function rmg.run(d, ctn,rtype)
+        rmg.XZMove(d[1]*8,d[3]*20)
+        rmg.spreaderMove(d[2]*8)
+        rmg.catchOrloose(ctn, d, rtype)
+        rmg.spreaderMove(4*8)
+        CreateEvent(GetSimTime(), rmg.co)
+    end
+    return rmg
+end 
+
+function NewContainer(pos)
+    local ctn = {}
+    
+    ctn.m = LoadObject(M3D, 'container.3ds', true)
+    
+    SetScale(ctn.m, 1/FOOT,1/FOOT,1/FOOT)
+    
+    ctn.x,ctn.y,ctn.z = pos.x,pos.y,pos.z
+
+    function ctn.out()
+        DelObject(ctn.m)
+    end
+    
+    function ctn.change_color(color)
+        LoadTexture(M3D, ctn.m, 'Ctn'.. color .. '.jpg')
+    end 
+    
+    function ctn.pos()  SetPosition(ctn.m, ctn.x*8+4, ctn.y*8, ctn.z*20+10) end 
+    ctn.pos()
+    return ctn
+end 
+
+function update3d()                         --update the 3D world, using time scan method
+    --local sim_x = 64                      --set the simulationtime/RealTime = 32
+    local real_t0 = os.clock()              
+    for i=1,X do 
+        for j=1,Z do 
+            if inYard[i][j] > 0 then 
+                for k=1,inYard[i][j] do 
+                    local c = NewContainer{x=i-1,y=k-1,z=j-1}
+                end 
+            end 
+        end 
+    end 
+    while Update(M3D) do                    --constantly update the 3D world 
+        local real_t1 = os.clock()
+        local real_dt = real_t1 - real_t0
+        local sim_dt = real_dt*UPDATEINTV
+        rmg.pos()
+        Delay(sim_dt)
+        real_t0 = real_t1
+    end
+end
+
+function init()
+    inYard = {}
+    for i=1,X do 
+        inYard[i] = {}
+        for j=1,Z do 
+            inYard[i][j] = 0
+        end 
+    end 
+    iO = {}
+    iO[1] = {0.5,  0,  -1}
+	iO[2] = {2,    0,  -1}
+	iO[3] = {4,    0,  -1}
+	iO[4] = {5.5,  0,  -1}
+	iO[5] = {0.5,  0,   Z}
+	iO[6] = {2,    0,   Z}
+	iO[7] = {4,    0,   Z}
+	iO[8] = {5.5,  0,   Z}
+	local tabRequest = Open("originRequest1.txt")
+
+	for i = 1, GetRecCount(tabRequest)  do 		
+		local rtype = GetValue(tabRequest,"type",i)
+		
+		local x     = GetValue(tabRequest,"X",   i)
+		local z     = GetValue(tabRequest,"Y",   i)
+		local y     = GetValue(tabRequest,"Z",   i)
+        local iO2   = GetValue(tabRequest,"I/O2", i)
+		local isin = rtype == 2 and 1 or 0
+        local d,ctn
+		if rtype == 2 then 
+            d = iO[math.random(1,4)]
+            ctn = NewContainer{x=x,y=4-y,z=z}
+            ctn.change_color('Blue')
+            ctn.pos()
+		else
+			d = {x,4-y,z}
+            ctn = NewContainer{x=iO[iO2][1],y=iO[iO2][2],z=iO[iO2][3]}
+            ctn.change_color('Yellow')
+            ctn.pos()
+		end 
+      
+		local req = {rtype = rtype, d=d, ctn=ctn}
+        if i~=GetRecCount(tabRequest) then 
+            rmg.tasks[i] = req
+        else 
+            rmg.addtask(req.d,req.ctn)
+        end 
+		inYard[x+1][z+1]= 4 - y
+		--inYard[x+1][y+1].isfrozen = true
+	end 
+end 
+
